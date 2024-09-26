@@ -19,6 +19,7 @@ import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -28,10 +29,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.MaterialTheme.shapes
 import androidx.compose.material3.MaterialTheme.typography
@@ -41,6 +46,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,12 +62,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.unscramble.R
 import com.example.unscramble.ui.theme.UnscrambleTheme
 
 @Composable
-fun GameScreen() {
+fun GameScreen(
+    gameViewModel: GameViewModel = viewModel()
+) {
+    val gameUiState by gameViewModel.uiState.collectAsState()
     val mediumPadding = dimensionResource(R.dimen.padding_medium)
+    var isSolutionVisible by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -74,10 +89,25 @@ fun GameScreen() {
             style = typography.titleLarge,
         )
         GameLayout(
+            currentScrambledWord = gameUiState.currentScrambledWord,
             modifier = Modifier
                 .fillMaxWidth()
                 .wrapContentHeight()
-                .padding(mediumPadding)
+                .padding(mediumPadding),
+            onUserGuessChange = {gameViewModel.updateUserGuess(it)},
+            onKeyBoardDone = {
+                gameViewModel.checkUserGuess()
+                isSolutionVisible = false},
+            userGuess = gameViewModel.userGuess,
+            isGuessWrong = gameUiState.isGuessWordWrong,
+            wordCount = gameUiState.currentWordCount,
+            solution = gameViewModel.showSolution(),
+            isSolutionVisible = isSolutionVisible,
+            turnOnHint = {
+                if(gameViewModel.checkEnoughPoints()){
+                    isSolutionVisible = true
+                }
+            }
         )
         Column(
             modifier = Modifier
@@ -89,7 +119,10 @@ fun GameScreen() {
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { }
+                onClick = {
+                    gameViewModel.checkUserGuess()
+                    isSolutionVisible = false
+                }
             ) {
                 Text(
                     text = stringResource(R.string.submit),
@@ -98,7 +131,7 @@ fun GameScreen() {
             }
 
             OutlinedButton(
-                onClick = { },
+                onClick = { gameViewModel.skipWord() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
@@ -107,8 +140,13 @@ fun GameScreen() {
                 )
             }
         }
-
-        GameStatus(score = 0, modifier = Modifier.padding(20.dp))
+        GameStatus(score = gameUiState.score, modifier = Modifier.padding(20.dp))
+        if (gameUiState.isGameOver) {
+            FinalScoreDialog(
+                score = gameUiState.score,
+                onPlayAgain = { gameViewModel.resetGame() }
+            )
+        }
     }
 }
 
@@ -126,7 +164,18 @@ fun GameStatus(score: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun GameLayout(modifier: Modifier = Modifier) {
+fun GameLayout(
+    currentScrambledWord: String,
+    modifier: Modifier = Modifier,
+    onKeyBoardDone: () -> Unit,
+    onUserGuessChange: (String) -> Unit,
+    userGuess: String,
+    isGuessWrong : Boolean = false,
+    wordCount : Int,
+    solution: String,
+    isSolutionVisible: Boolean ,
+    turnOnHint: () -> Unit
+    ) {
     val mediumPadding = dimensionResource(R.dimen.padding_medium)
 
     Card(
@@ -138,18 +187,39 @@ fun GameLayout(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(mediumPadding)
         ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    modifier = Modifier
+                        .clip(shapes.medium)
+                        .background(colorScheme.surfaceTint)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    text = stringResource(R.string.word_count, wordCount),
+                    style = typography.titleMedium,
+                    color = colorScheme.onPrimary
+                )
+                if(isSolutionVisible){
+                    Text(
+                        text = solution,
+                        style = typography.titleLarge,
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        turnOnHint()
+                    }) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null
+                    )
+                }
+
+            }
             Text(
-                modifier = Modifier
-                    .clip(shapes.medium)
-                    .background(colorScheme.surfaceTint)
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .align(alignment = Alignment.End),
-                text = stringResource(R.string.word_count, 0),
-                style = typography.titleMedium,
-                color = colorScheme.onPrimary
-            )
-            Text(
-                text = "scrambleun",
+                text = currentScrambledWord,
                 style = typography.displayMedium
             )
             Text(
@@ -158,7 +228,7 @@ fun GameLayout(modifier: Modifier = Modifier) {
                 style = typography.titleMedium
             )
             OutlinedTextField(
-                value = "",
+                value = userGuess,
                 singleLine = true,
                 shape = shapes.large,
                 modifier = Modifier.fillMaxWidth(),
@@ -167,14 +237,25 @@ fun GameLayout(modifier: Modifier = Modifier) {
                     unfocusedContainerColor = colorScheme.surface,
                     disabledContainerColor = colorScheme.surface,
                 ),
-                onValueChange = { },
-                label = { Text(stringResource(R.string.enter_your_word)) },
-                isError = false,
+                onValueChange = onUserGuessChange,
+                label = @Composable {
+                    if(isGuessWrong){
+                        Text(
+                            text = stringResource(R.string.wrong_guess),
+                        )
+                    }else{
+                        Text(
+                            text = stringResource(R.string.enter_your_word),
+                        )
+                    }
+                },
+                isError = isGuessWrong,
                 keyboardOptions = KeyboardOptions.Default.copy(
-                    imeAction = ImeAction.Done
+                    imeAction = if(wordCount!= 10)ImeAction.Next else ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = { }
+                    onDone = { onKeyBoardDone() },
+                    onNext = {onKeyBoardDone()}
                 )
             )
         }
